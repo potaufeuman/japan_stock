@@ -49,9 +49,13 @@
   <div id="tab-sectors" class="tab-content">
     <div class="section-header">
       <h2>セクター別パフォーマンス</h2>
-      <button class="refresh-btn" onclick="loadSectors()">更新</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="refresh-btn outline" onclick="loadSectorsPartial()">途中表示</button>
+        <button class="refresh-btn" onclick="loadSectors()">更新</button>
+      </div>
     </div>
     <p class="note">出来高比率が高いセクターほど資金が流入しています</p>
+    <div id="sectorPartialBanner" class="partial-banner" style="display:none"></div>
     <div id="sectorLoading" class="loading">データ取得中...</div>
     <div id="sectorChart" class="chart-box" style="display:none">
       <canvas id="chartSectors" height="120"></canvas>
@@ -66,6 +70,7 @@
       <div style="display:flex;gap:8px;align-items:center">
         <span id="cacheStatus" class="cache-status"></span>
         <button class="refresh-btn outline" onclick="clearCacheAndReload()">キャッシュクリア</button>
+        <button class="refresh-btn outline" onclick="loadStocksPartial(0)">途中表示</button>
         <button class="refresh-btn" onclick="loadStocks(0)">更新</button>
       </div>
     </div>
@@ -88,6 +93,7 @@
         <span class="badge score-low">〜60: 参考</span>
       </div>
     </div>
+    <div id="stocksPartialBanner" class="partial-banner" style="display:none"></div>
     <div id="stocksLoading" class="loading">データ取得中...</div>
     <div id="skippedInfo" class="skipped-info" style="display:none"></div>
     <div id="stocksTable" class="table-wrap" style="display:none"></div>

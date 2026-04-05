@@ -348,6 +348,18 @@ tr.clickable { cursor: pointer; }
 /* Note */
 .note { color: var(--text2); font-size: 12px; margin-bottom: 12px; }
 
+/* Partial display banner */
+.partial-banner {
+  background: rgba(255, 166, 87, 0.08);
+  border: 1px solid rgba(255, 166, 87, 0.35);
+  border-radius: 8px;
+  color: var(--orange);
+  font-size: 13px;
+  margin-bottom: 12px;
+  padding: 9px 14px;
+}
+.partial-banner strong { font-weight: 700; }
+
 /* Skipped info */
 .skipped-info { margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
 .skip-row { background: var(--bg2); border-radius: 8px; font-size: 12px; padding: 8px 12px;

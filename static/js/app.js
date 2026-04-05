@@ -104,19 +104,9 @@ async function loadMarket() {
 }
 
 // ---- Sectors tab ----
-async function loadSectors() {
-  const loading = document.getElementById('sectorLoading');
-  const tableWrap = document.getElementById('sectorTable');
+function _renderSectorsChart(sectors) {
   const chartWrap = document.getElementById('sectorChart');
-  loading.style.display = 'block';
-  tableWrap.style.display = 'none';
-  chartWrap.style.display = 'none';
-
-  const res = await fetch('/api/sectors');
-  const { sectors } = await res.json();
-  loading.style.display = 'none';
-  if (!sectors.length) return;
-
+  const tableWrap = document.getElementById('sectorTable');
   chartWrap.style.display = 'block';
   chartSectors = destroyChart(chartSectors);
   chartSectors = new Chart(document.getElementById('chartSectors'), {
@@ -135,7 +125,6 @@ async function loadSectors() {
       }
     }
   });
-
   tableWrap.style.display = 'block';
   tableWrap.innerHTML = `
     <table><thead><tr><th>セクター</th><th>前日比</th><th>出来高流入比率</th><th>資金動向</th></tr></thead>
@@ -150,6 +139,55 @@ async function loadSectors() {
     }).join('')}</tbody></table>`;
 }
 
+async function loadSectors() {
+  const loading = document.getElementById('sectorLoading');
+  const tableWrap = document.getElementById('sectorTable');
+  const chartWrap = document.getElementById('sectorChart');
+  const banner = document.getElementById('sectorPartialBanner');
+  loading.style.display = 'block';
+  tableWrap.style.display = 'none';
+  chartWrap.style.display = 'none';
+  banner.style.display = 'none';
+
+  const res = await fetch('/api/sectors');
+  const { sectors } = await res.json();
+  loading.style.display = 'none';
+  if (!sectors.length) return;
+  _renderSectorsChart(sectors);
+}
+
+async function loadSectorsPartial() {
+  const loading = document.getElementById('sectorLoading');
+  const tableWrap = document.getElementById('sectorTable');
+  const chartWrap = document.getElementById('sectorChart');
+  const banner = document.getElementById('sectorPartialBanner');
+  loading.style.display = 'none';
+  tableWrap.style.display = 'none';
+  chartWrap.style.display = 'none';
+  banner.style.display = 'none';
+
+  let result;
+  try {
+    const res = await fetch('/api/sectors/partial');
+    if (!res.ok) throw new Error(`サーバーエラー: ${res.status}`);
+    result = await res.json();
+  } catch (e) {
+    tableWrap.style.display = 'block';
+    tableWrap.innerHTML = `<div style="color:#f85149;padding:20px">取得に失敗しました: ${e.message}</div>`;
+    return;
+  }
+
+  const { sectors, cached_count, total } = result;
+  banner.style.display = 'block';
+  if (cached_count === 0) {
+    banner.innerHTML = `⚡ 途中表示 — キャッシュなし。先に「更新」を押してデータを取得してください。`;
+    return;
+  }
+  const pct = Math.round(cached_count / total * 100);
+  banner.innerHTML = `⚡ 途中表示 — 全${total}セクター中 <strong>${cached_count}セクター（${pct}%）</strong> のキャッシュ済みデータをもとに表示しています`;
+  _renderSectorsChart(sectors);
+}
+
 // ---- Stocks tab ----
 let currentPage = 0;
 let searchTimer = null;
@@ -157,6 +195,41 @@ let searchTimer = null;
 function debounceSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => loadStocks(0), 400);
+}
+
+function _renderStocksTable(stocks) {
+  if (!stocks.length) return '<div class="loading" style="color:#8b949e">該当銘柄なし</div>';
+  return `<table>
+    <thead><tr>
+      <th>コード</th><th>銘柄名</th><th>株価</th><th>前日比</th>
+      <th>PER</th><th>PBR</th><th>配当利回り</th>
+      <th>出来高比率</th><th>RSI</th><th>1M騰落率</th>
+      <th>総合スコア</th><th>評価根拠</th>
+    </tr></thead>
+    <tbody>${stocks.map(s => {
+      const bc = scoreColor(s.score);
+      return `<tr class="clickable" onclick="showDetail('${s.symbol}')">
+        <td style="color:#58a6ff">${s.symbol.replace('.T','')}</td>
+        <td>${s.name}</td>
+        <td>${Number(s.price).toLocaleString('ja-JP')} 円</td>
+        <td class="${pctColor(s.change_pct)}">${pctStr(s.change_pct)}</td>
+        <td>${s.per != null ? s.per + '倍' : '—'}</td>
+        <td>${s.pbr != null ? s.pbr + '倍' : '—'}</td>
+        <td>${s.div_yield != null ? s.div_yield + '%' : '—'}</td>
+        <td class="${s.vol_ratio >= 1.5 ? 'pos' : s.vol_ratio <= 0.7 ? 'neg' : 'neutral'}">${s.vol_ratio}倍</td>
+        <td class="${s.rsi < 30 ? 'neg' : s.rsi > 70 ? 'pos' : 'neutral'}">${s.rsi}</td>
+        <td class="${pctColor(s.momentum_1m)}">${pctStr(s.momentum_1m)}</td>
+        <td>
+          <div class="score-bar-wrap">
+            <div class="score-bar"><div class="score-bar-fill" style="width:${s.score}%;background:${bc}"></div></div>
+            <span class="score-num ${scoreBadgeClass(s.score)}">${s.score}</span>
+          </div>
+        </td>
+        <td style="max-width:200px;white-space:normal;font-size:11px;color:#8b949e">${(s.reasons||[]).slice(0,2).join(' / ')}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>
+  <p class="note" style="margin-top:8px">※ 行をクリックすると詳細を表示します</p>`;
 }
 
 async function loadStocks(page = 0) {
@@ -170,6 +243,7 @@ async function loadStocks(page = 0) {
   loading.style.display = 'block';
   tableWrap.style.display = 'none';
   pagination.style.display = 'none';
+  document.getElementById('stocksPartialBanner').style.display = 'none';
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 120000);
@@ -222,56 +296,80 @@ async function loadStocks(page = 0) {
     skipEl.style.display = 'none';
   }
 
-  if (!stocks.length) {
-    tableWrap.innerHTML = '<div class="loading" style="color:#8b949e">該当銘柄なし</div>';
-    return;
-  }
-
-  tableWrap.innerHTML = `
-    <table>
-      <thead><tr>
-        <th>コード</th><th>銘柄名</th><th>株価</th><th>前日比</th>
-        <th>PER</th><th>PBR</th><th>配当利回り</th>
-        <th>出来高比率</th><th>RSI</th><th>1M騰落率</th>
-        <th>総合スコア</th><th>評価根拠</th>
-      </tr></thead>
-      <tbody>${stocks.map(s => {
-        const bc = scoreColor(s.score);
-        return `<tr class="clickable" onclick="showDetail('${s.symbol}')">
-          <td style="color:#58a6ff">${s.symbol.replace('.T','')}</td>
-          <td>${s.name}</td>
-          <td>${Number(s.price).toLocaleString('ja-JP')} 円</td>
-          <td class="${pctColor(s.change_pct)}">${pctStr(s.change_pct)}</td>
-          <td>${s.per != null ? s.per + '倍' : '—'}</td>
-          <td>${s.pbr != null ? s.pbr + '倍' : '—'}</td>
-          <td>${s.div_yield != null ? s.div_yield + '%' : '—'}</td>
-          <td class="${s.vol_ratio >= 1.5 ? 'pos' : s.vol_ratio <= 0.7 ? 'neg' : 'neutral'}">${s.vol_ratio}倍</td>
-          <td class="${s.rsi < 30 ? 'neg' : s.rsi > 70 ? 'pos' : 'neutral'}">${s.rsi}</td>
-          <td class="${pctColor(s.momentum_1m)}">${pctStr(s.momentum_1m)}</td>
-          <td>
-            <div class="score-bar-wrap">
-              <div class="score-bar"><div class="score-bar-fill" style="width:${s.score}%;background:${bc}"></div></div>
-              <span class="score-num ${scoreBadgeClass(s.score)}">${s.score}</span>
-            </div>
-          </td>
-          <td style="max-width:200px;white-space:normal;font-size:11px;color:#8b949e">${(s.reasons||[]).slice(0,2).join(' / ')}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>
-    <p class="note" style="margin-top:8px">※ 行をクリックすると詳細を表示します</p>`;
+  tableWrap.innerHTML = _renderStocksTable(stocks);
+  if (!stocks.length) return;
 
   // ページネーション
   if (total_pages > 1) {
     pagination.style.display = 'flex';
     let html = `<button class="page-btn" onclick="loadStocks(${page-1})" ${page===0?'disabled':''}>◀ 前へ</button>`;
     html += `<span class="page-info">${page+1} / ${total_pages} ページ（全${total}銘柄）</span>`;
-    // 前後2ページ分のボタン
     const start = Math.max(0, page - 2);
     const end = Math.min(total_pages - 1, page + 2);
     for (let i = start; i <= end; i++) {
       html += `<button class="page-btn ${i===page?'active':''}" onclick="loadStocks(${i})">${i+1}</button>`;
     }
     html += `<button class="page-btn" onclick="loadStocks(${page+1})" ${page===total_pages-1?'disabled':''}>次へ ▶</button>`;
+    pagination.innerHTML = html;
+  }
+}
+
+async function loadStocksPartial(page = 0) {
+  currentPage = page;
+  const loading = document.getElementById('stocksLoading');
+  const tableWrap = document.getElementById('stocksTable');
+  const pagination = document.getElementById('pagination');
+  const banner = document.getElementById('stocksPartialBanner');
+  const sortBy = document.getElementById('sortSelect').value;
+  const search = document.getElementById('stockSearch').value.trim();
+
+  loading.style.display = 'none';
+  tableWrap.style.display = 'none';
+  pagination.style.display = 'none';
+  banner.style.display = 'none';
+  document.getElementById('skippedInfo').style.display = 'none';
+
+  let result;
+  try {
+    const url = `/api/stocks/partial?sort_by=${sortBy}&page=${page}&page_size=50` + (search ? `&search=${encodeURIComponent(search)}` : '');
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`サーバーエラー: ${res.status}`);
+    result = await res.json();
+  } catch (e) {
+    tableWrap.style.display = 'block';
+    tableWrap.innerHTML = `<div style="color:#f85149;padding:20px">取得に失敗しました: ${e.message}</div>`;
+    return;
+  }
+
+  const { stocks, total, total_all, cached_count, page_size: ps, total_pages } = result;
+
+  // 進捗バナー表示
+  banner.style.display = 'block';
+  if (cached_count === 0) {
+    banner.innerHTML = `⚡ 途中表示 — キャッシュなし。先に「更新」を押してデータを取得してください。`;
+    tableWrap.style.display = 'none';
+    return;
+  }
+  const pct = Math.round(cached_count / total_all * 100);
+  banner.innerHTML = `⚡ 途中表示 — 全${total_all}銘柄中 <strong>${cached_count}銘柄（${pct}%）</strong> のキャッシュ済みデータをもとに表示しています`;
+
+  document.getElementById('stocksCountBadge').textContent = `${total}銘柄（キャッシュ済み）`;
+
+  tableWrap.style.display = 'block';
+  tableWrap.innerHTML = _renderStocksTable(stocks);
+  if (!stocks.length) return;
+
+  // ページネーション
+  if (total_pages > 1) {
+    pagination.style.display = 'flex';
+    let html = `<button class="page-btn" onclick="loadStocksPartial(${page-1})" ${page===0?'disabled':''}>◀ 前へ</button>`;
+    html += `<span class="page-info">${page+1} / ${total_pages} ページ（キャッシュ済み${total}銘柄）</span>`;
+    const start = Math.max(0, page - 2);
+    const end = Math.min(total_pages - 1, page + 2);
+    for (let i = start; i <= end; i++) {
+      html += `<button class="page-btn ${i===page?'active':''}" onclick="loadStocksPartial(${i})">${i+1}</button>`;
+    }
+    html += `<button class="page-btn" onclick="loadStocksPartial(${page+1})" ${page===total_pages-1?'disabled':''}>次へ ▶</button>`;
     pagination.innerHTML = html;
   }
 }

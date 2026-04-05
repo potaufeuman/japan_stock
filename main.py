@@ -60,6 +60,10 @@ CACHE_TTL_OK        = 600    # 10分
 CACHE_TTL_DELISTED  = 3600   # 60分
 CACHE_TTL_RATELIMIT = 30     # 30秒
 
+# セクターキャッシュ
+_sector_cache: dict = {}
+CACHE_TTL_SECTOR = 600  # 10分
+
 _FAIL_DELISTED   = "__DELISTED__"    # 上場廃止・データなし
 _FAIL_RATELIMIT  = "__RATELIMIT__"   # レートリミット（短期スキップ）
 
@@ -365,6 +369,13 @@ async def get_sectors():
 
 
 def fetch_sector_data(symbol: str, name: str) -> dict:
+    # キャッシュチェック
+    entry = _sector_cache.get(symbol)
+    if entry:
+        data, ts = entry
+        if time.time() - ts < CACHE_TTL_SECTOR:
+            return data
+
     try:
         t = yf.Ticker(symbol)
         hist = t.history(period="1mo", auto_adjust=False)
@@ -377,13 +388,15 @@ def fetch_sector_data(symbol: str, name: str) -> dict:
         vol_ma5 = hist["Volume"].rolling(5).mean().iloc[-1] if len(hist) >= 5 else hist["Volume"].mean()
         vol_ma20 = hist["Volume"].rolling(20).mean().iloc[-1] if len(hist) >= 20 else hist["Volume"].mean()
         inflow = vol_ma5 / vol_ma20 if vol_ma20 > 0 else 1.0
-        return {
+        result = {
             "symbol": symbol,
             "name": name,
             "price": round(float(current), 2),
             "change_pct": round(float(change_pct), 2),
             "inflow_ratio": round(float(inflow), 2),
         }
+        _sector_cache[symbol] = (result, time.time())
+        return result
     except Exception as e:
         print(f"Error {symbol}: {e}")
         return None
@@ -429,9 +442,73 @@ async def get_stocks(
     }
 
 
+@app.get("/api/stocks/partial")
+async def get_stocks_partial(
+    sort_by: str = "score",
+    page: int = Query(0, ge=0),
+    page_size: int = Query(50, ge=1, le=100),
+    search: str = "",
+):
+    """キャッシュ済み銘柄のみを返す（新規フェッチなし）"""
+    symbols = list(WATCHLIST.keys())
+    if search:
+        q = search.upper().replace(".T", "")
+        symbols = [s for s in symbols if q in s.replace(".T", "") or q in WATCHLIST[s]]
+
+    total_all = len(symbols)
+
+    cached_stocks = []
+    for sym in symbols:
+        cached = _cache_get(sym)
+        if cached and cached not in (_FAIL_DELISTED, _FAIL_RATELIMIT):
+            cached_stocks.append(cached)
+
+    cached_count = len(cached_stocks)
+
+    key = {"score": lambda x: -x["score"], "change_pct": lambda x: -x["change_pct"],
+           "vol_ratio": lambda x: -x["vol_ratio"],
+           "per": lambda x: (x["per"] is None, x["per"] or 999),
+           "pbr": lambda x: (x["pbr"] is None, x["pbr"] or 999)}.get(sort_by)
+    if key:
+        cached_stocks.sort(key=key)
+
+    total_cached = len(cached_stocks)
+    page_stocks = cached_stocks[page * page_size: (page + 1) * page_size]
+
+    return {
+        "stocks": page_stocks,
+        "total": total_cached,
+        "total_all": total_all,
+        "cached_count": cached_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total_cached + page_size - 1) // page_size) if total_cached > 0 else 0,
+    }
+
+
+@app.get("/api/sectors/partial")
+async def get_sectors_partial():
+    """キャッシュ済みセクターのみを返す（新規フェッチなし）"""
+    total = len(SECTOR_ETFS)
+    cached_sectors = []
+    for sym in SECTOR_ETFS:
+        entry = _sector_cache.get(sym)
+        if entry:
+            data, ts = entry
+            if time.time() - ts < CACHE_TTL_SECTOR:
+                cached_sectors.append(data)
+    cached_sectors.sort(key=lambda x: x["change_pct"], reverse=True)
+    return {
+        "sectors": cached_sectors,
+        "cached_count": len(cached_sectors),
+        "total": total,
+    }
+
+
 @app.get("/api/cache/clear")
 async def clear_cache():
     _cache.clear()
+    _sector_cache.clear()
     return {"message": "キャッシュをクリアしました"}
 
 
