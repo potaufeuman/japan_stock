@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>日本株式市場アナライザー</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>🗾 日本株式市場アナライザー</h1>
+      <div class="last-updated" id="lastUpdated">--</div>
+    </div>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="market">市場概況</button>
+    <button class="tab-btn" data-tab="sectors">セクター分析</button>
+    <button class="tab-btn" data-tab="stocks">銘柄スクリーニング</button>
+    <button class="tab-btn" data-tab="detail">銘柄詳細</button>
+  </nav>
+
+  <!-- 市場概況タブ -->
+  <div id="tab-market" class="tab-content active">
+    <div class="section-header">
+      <h2>市場概況・資金フロー</h2>
+      <button class="refresh-btn" onclick="loadMarket()">更新</button>
+    </div>
+    <div id="marketCards" class="index-cards"></div>
+    <div class="charts-row">
+      <div class="chart-box">
+        <h3>日経225 チャート（6ヶ月）</h3>
+        <canvas id="chartN225"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>TOPIX チャート（6ヶ月）</h3>
+        <canvas id="chartTOPIX"></canvas>
+      </div>
+    </div>
+    <div class="money-flow-section">
+      <h3>市場への資金フロー判定</h3>
+      <div id="moneyFlowInfo" class="money-flow-info"></div>
+    </div>
+  </div>
+
+  <!-- セクター分析タブ -->
+  <div id="tab-sectors" class="tab-content">
+    <div class="section-header">
+      <h2>セクター別パフォーマンス</h2>
+      <button class="refresh-btn" onclick="loadSectors()">更新</button>
+    </div>
+    <p class="note">出来高比率が高いセクターほど資金が流入しています</p>
+    <div id="sectorLoading" class="loading">データ取得中...</div>
+    <div id="sectorChart" class="chart-box" style="display:none">
+      <canvas id="chartSectors" height="120"></canvas>
+    </div>
+    <div id="sectorTable" class="table-wrap" style="display:none"></div>
+  </div>
+
+  <!-- 銘柄スクリーニングタブ -->
+  <div id="tab-stocks" class="tab-content">
+    <div class="section-header">
+      <h2>銘柄スクリーニング <span id="stocksCountBadge" class="count-badge"></span></h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="cacheStatus" class="cache-status"></span>
+        <button class="refresh-btn outline" onclick="clearCacheAndReload()">キャッシュクリア</button>
+        <button class="refresh-btn" onclick="loadStocks(0)">更新</button>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <label>並び替え：
+        <select id="sortSelect" onchange="loadStocks(0)">
+          <option value="score">総合スコア順</option>
+          <option value="change_pct">前日比順</option>
+          <option value="vol_ratio">出来高増加率順</option>
+          <option value="per">PER低い順</option>
+          <option value="pbr">PBR低い順</option>
+        </select>
+      </label>
+      <label>検索：
+        <input type="text" id="stockSearch" placeholder="コード or 銘柄名" style="width:140px;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px" oninput="debounceSearch()">
+      </label>
+      <div class="score-legend">
+        <span class="badge score-high">80+: 注目</span>
+        <span class="badge score-mid">60+: 有望</span>
+        <span class="badge score-low">〜60: 参考</span>
+      </div>
+    </div>
+    <div id="stocksLoading" class="loading">データ取得中...</div>
+    <div id="skippedInfo" class="skipped-info" style="display:none"></div>
+    <div id="stocksTable" class="table-wrap" style="display:none"></div>
+    <div id="pagination" class="pagination" style="display:none"></div>
+  </div>
+
+  <!-- 銘柄詳細タブ -->
+  <div id="tab-detail" class="tab-content">
+    <div class="section-header">
+      <h2>銘柄詳細分析</h2>
+    </div>
+    <div class="search-bar">
+      <div style="position:relative">
+        <input type="text" id="symbolInput" placeholder="コード（7203）または銘柄名（トヨタ）" autocomplete="off" />
+        <div id="suggestBox" class="suggest-box" style="display:none"></div>
+      </div>
+      <button onclick="loadDetail()">検索</button>
+    </div>
+    <div id="detailLoading" class="loading" style="display:none">取得中...</div>
+    <div id="detailContent" style="display:none">
+      <div class="detail-header">
+        <div class="detail-title">
+          <h3 id="detailName"></h3>
+          <span id="detailSymbol" class="detail-symbol"></span>
+        </div>
+        <div class="detail-price-block">
+          <div id="detailPrice" class="detail-price"></div>
+          <div id="detailChange" class="detail-change"></div>
+        </div>
+        <div id="detailScore" class="score-badge-large"></div>
+      </div>
+      <div class="detail-grid">
+        <div class="metric-card"><span class="metric-label">PER</span><span id="dPer" class="metric-value"></span></div>
+        <div class="metric-card"><span class="metric-label">PBR</span><span id="dPbr" class="metric-value"></span></div>
+        <div class="metric-card"><span class="metric-label">配当利回り</span><span id="dDiv" class="metric-value"></span></div>
+        <div class="metric-card"><span class="metric-label">RSI(14)</span><span id="dRsi" class="metric-value"></span></div>
+        <div class="metric-card"><span class="metric-label">出来高比率</span><span id="dVol" class="metric-value"></span></div>
+        <div class="metric-card"><span class="metric-label">1ヶ月騰落率</span><span id="dMom" class="metric-value"></span></div>
+        <div class="metric-card"><span class="metric-label">52週高値</span><span id="dHigh" class="metric-value"></span></div>
+        <div class="metric-card"><span class="metric-label">52週安値</span><span id="dLow" class="metric-value"></span></div>
+      </div>
+      <div class="reason-box">
+        <h4>評価根拠</h4>
+        <ul id="detailReasons"></ul>
+      </div>
+      <div class="chart-box">
+        <div class="chart-header">
+          <h4>株価チャート（6ヶ月）</h4>
+          <div class="chart-toggles">
+            <label class="toggle-label">
+              <input type="checkbox" id="toggleTradingValue" checked onchange="redrawDetailChart()">
+              売買代金（億円）
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="togglePer" checked onchange="redrawDetailChart()">
+              推定PER
+            </label>
+          </div>
+        </div>
+        <canvas id="chartDetail"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
