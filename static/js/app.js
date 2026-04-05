@@ -201,7 +201,7 @@ function _renderStocksTable(stocks) {
   if (!stocks.length) return '<div class="loading" style="color:#8b949e">該当銘柄なし</div>';
   return `<table>
     <thead><tr>
-      <th>コード</th><th>銘柄名</th><th>株価</th><th>前日比</th>
+      <th>順位</th><th>コード</th><th>銘柄名</th><th>株価</th><th>前日比</th>
       <th>PER</th><th>PBR</th><th>配当利回り</th>
       <th>出来高比率</th><th>RSI</th><th>1M騰落率</th>
       <th>総合スコア</th><th>評価根拠</th>
@@ -209,6 +209,7 @@ function _renderStocksTable(stocks) {
     <tbody>${stocks.map(s => {
       const bc = scoreColor(s.score);
       return `<tr class="clickable" onclick="showDetail('${s.symbol}')">
+        <td style="color:#8b949e;text-align:center">${s.rank != null ? s.rank : '—'}</td>
         <td style="color:#58a6ff">${s.symbol.replace('.T','')}</td>
         <td>${s.name}</td>
         <td>${Number(s.price).toLocaleString('ja-JP')} 円</td>

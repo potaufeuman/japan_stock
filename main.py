@@ -415,11 +415,11 @@ async def get_stocks(
         symbols = [s for s in symbols if q in s.replace(".T", "") or q in WATCHLIST[s]]
 
     total = len(symbols)
-    page_symbols = symbols[page * page_size: (page + 1) * page_size]
 
+    # 全銘柄を取得してからグローバルソート→ページ分割
     loop = asyncio.get_event_loop()
     stocks, skipped_rl, skipped_nf = await loop.run_in_executor(
-        executor, bulk_fetch_stocks, page_symbols
+        executor, bulk_fetch_stocks, symbols
     )
 
     key = {"score": lambda x: -x["score"], "change_pct": lambda x: -x["change_pct"],
@@ -429,14 +429,22 @@ async def get_stocks(
     if key:
         stocks.sort(key=key)
 
+    # グローバル順位を付与
+    for i, s in enumerate(stocks):
+        s["rank"] = i + 1
+
+    # ソート後にページ分割
+    total_fetched = len(stocks)
+    page_stocks = stocks[page * page_size: (page + 1) * page_size]
+
     # スキップ銘柄に銘柄名を付けて返す
     def label(sym): return f"{sym.replace('.T','')} {WATCHLIST.get(sym, sym)}"
 
     return {
-        "stocks": stocks, "total": total, "page": page,
+        "stocks": page_stocks, "total": total, "page": page,
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size,
-        "cached": sum(1 for s in page_symbols if _cache_get(s) not in (None, _FAIL_RATELIMIT, _FAIL_DELISTED)),
+        "cached": sum(1 for s in symbols if _cache_get(s) not in (None, _FAIL_RATELIMIT, _FAIL_DELISTED)),
         "skipped_ratelimit": [label(s) for s in skipped_rl],
         "skipped_notfound":  [label(s) for s in skipped_nf],
     }
@@ -471,6 +479,10 @@ async def get_stocks_partial(
            "pbr": lambda x: (x["pbr"] is None, x["pbr"] or 999)}.get(sort_by)
     if key:
         cached_stocks.sort(key=key)
+
+    # グローバル順位を付与
+    for i, s in enumerate(cached_stocks):
+        s["rank"] = i + 1
 
     total_cached = len(cached_stocks)
     page_stocks = cached_stocks[page * page_size: (page + 1) * page_size]
